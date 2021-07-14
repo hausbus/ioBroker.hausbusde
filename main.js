@@ -3037,7 +3037,7 @@ function readStatusForClasses(deviceId, foundClasses)
 	}
 }
 
-function addStateIoBroker(name, type, role, deviceId, classId, instanceId, writeable=true, readable=true, defaultValue=null, subChannel="")
+function addStateIoBroker(name, type, role, deviceId, classId, instanceId, writeable=true, readable=true, defaultValue=null, subChannel="", unit="")
 {
    var ioBrokerId = getIoBrokerId(deviceId,classId,instanceId,name, subChannel);
 
@@ -3048,7 +3048,8 @@ function addStateIoBroker(name, type, role, deviceId, classId, instanceId, write
    }
    
    objectIds[ioBrokerId]=getObjectId(deviceId, classId, instanceId);
-   adapter.setObjectNotExists(ioBrokerId,{type: 'state',common: {name: name,type: type,role: role, write:writeable, read:readable}, native : {}});
+   if (unit!="") adapter.setObjectNotExists(ioBrokerId,{type: 'state',common: {name: name,type: type,role: role, write:writeable, read:readable,  unit: unit}, native : {}});
+   else adapter.setObjectNotExists(ioBrokerId,{type: 'state',common: {name: name,type: type,role: role, write:writeable, read:readable}, native : {}});
    if (typeof ioBrokerStates[ioBrokerId]=="undefined") ioBrokerStates[ioBrokerId]="-";
    
    if (defaultValue!=null) setStateIoBroker(ioBrokerId, defaultValue);
@@ -3147,7 +3148,7 @@ function addIoBrokerStatesForInstance(deviceId, classId, instanceId)
    }
    else if (classId == CLASS_ID_TEMPERATURSENSOR)
    {
-	  addStateIoBroker(TEMP_FKT_TEMPERATUR, 'number', 'value.temperature', deviceId, classId, instanceId, false, true);
+	  addStateIoBroker(TEMP_FKT_TEMPERATUR, 'number', 'value.temperature', deviceId, classId, instanceId, false, true, null, "", "°C");
   	  addStateIoBroker(TEMP_FKT_TEMPERATURE_STATE, 'string', 'state ', deviceId, classId, instanceId, false, true);
 	  
   	  addStateIoBroker(TEMP_CFG_LOWER_THRESHOLD, 'number', 'state ', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
