@@ -1,8 +1,12 @@
 {
     "common": {
         "name": "hausbusde",
-        "version": "0.1.10",
+        "version": "0.1.11",
         "news": {
+		    "0.1.11": {
+                "en": "added celsius as unit for temperature",
+                "de": "added celsius as unit for temperature"
+            },
 		    "0.1.10": {
                 "en": "replaced all blanks in object names by underscores",
                 "de": "replaced all blanks in object names by underscores"
