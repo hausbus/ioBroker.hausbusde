@@ -35,9 +35,12 @@ The HausBusDe adapter is ready to use without further configurations. It is auto
 <br>
 
 ## Changelog
+### 0.1.11 (2021-07-14)
+* (hausbusde) added celsius as unit for temperature
+
 ### 0.1.10 (2021-07-06)
 * (hausbusde) replaced all blanks in object names by underscores
-* 
+
 ### 0.1.9 (2021-07-01)
 * (hausbusde) support for 8 channel shutter module
 
