@@ -13,25 +13,26 @@ var http = require('http');
 var fs = require('fs');
 
 // create the adapter object
-// create the adapter object
 var adapter = utils.Adapter('hausbusde');
 
 var DEFAULT_UDP_PORT = 5855;
 var BROADCAST_SEND_IP = "192.255.255.255";
 var BROADCAST_RECEIVE_IP = "0.0.0.0";
+var MIN_MESSAGE_DISTANCE = 400;
 
 var CLASS_ID_CONTROLLER = 0;
+var CLASS_ID_TASTER = 16;
 var CLASS_ID_DIMMER = 17;
-var CLASS_ID_FEUCHTESENSOR = 34;
-var CLASS_ID_HELLIGKEITSSENSOR = 39;
-var CLASS_ID_LED = 21;
-var CLASS_ID_LOGICAL_BUTTON = 20;
 var CLASS_ID_ROLLLADEN = 18;
 var CLASS_ID_SCHALTER = 19;
-var CLASS_ID_TASTER = 16;
+var CLASS_ID_LOGICAL_BUTTON = 20;
+var CLASS_ID_LED = 21;
+var CLASS_ID_RGB_DIMMER = 22;
 var CLASS_ID_TEMPERATURSENSOR = 32;
-var CLASS_ID_ETHERNET = 162;
 var CLASS_ID_IR_SENSOR = 33;
+var CLASS_ID_FEUCHTESENSOR = 34;
+var CLASS_ID_HELLIGKEITSSENSOR = 39;
+var CLASS_ID_ETHERNET = 162;
 
 var MODUL_ID_32_IO=11;
 var MODUL_ID_16_RELAIS_V2=10;
@@ -46,6 +47,7 @@ var MODUL_ID_8_DIMMER=6;
 var MODUL_ID_8_ROLLO=2;
 var MODUL_ID_8_RELAIS=5;
 var MODUL_ID_LAN_BRIDGE=15;
+var MODUL_ID_RGB_DIMMER=16;
 
 var MODULES = {}; // Alle Haus-Bus Module
 var CLASSES = {}; // Alle Haus-Bus Klassen
@@ -174,6 +176,17 @@ var DIMMER_DIMMING_IDLE = "IDLE";
 var DIMMER_DIMMING_UP = "DIMMING_UP";
 var DIMMER_DIMMING_DOWN = "DIMMING_DOWN";
 
+var RGB_DIMMER_FKT_COLOR = "color";
+var RGB_DIMMER_FKT_COLOR_DURATION = "color_duration";
+//var RGB_DIMMER_FKT_DIMMING_STATUS = "dimming_status";
+
+var RGB_DIMMER_CFG_FADING_TIME = "fading_time";
+
+var RGB_DIMMER_DIMMING_IDLE = "IDLE";
+var RGB_DIMMER_DIMMING_UP = "DIMMING_UP";
+var RGB_DIMMER_DIMMING_DOWN = "DIMMING_DOWN";
+
+
 var FIRMWARE_ID_AR8 = "AR8";
 var FIRMWARE_ID_MS6 = "MS6";
 var FIRMWARE_ID_SD6 = "SD6";
@@ -271,7 +284,6 @@ function main()
 	  
 	  adapter.subscribeStates(adapter.namespace+".*");
 	  adapter.setObjectNotExists(adapter.namespace+"."+CONTROLLER_RESEACH_DEVICES,{type: 'state',common: {name: CONTROLLER_RESEACH_DEVICES,type: "boolean",role: "button"},native: {}});
-	  //adapter.setObjectNotExists(adapter.namespace+"."+CONTROLLER_CHECK_FIRMWARE_UPDATES,{type: 'state',common: {name: CONTROLLER_CHECK_FIRMWARE_UPDATES,type: "boolean",role: "button"},native: {}});
 
 	  searchAllDevices();
 	  setTimeout(readFirmwareVersions, 10000);
@@ -446,7 +458,7 @@ function sendUdpDatagram(message)
     if (!sendDelayTimer) 
     {
         sendNextQueueDatagram();
-        sendDelayTimer = setInterval(sendNextQueueDatagram, 200);
+        sendDelayTimer = setInterval(sendNextQueueDatagram, MIN_MESSAGE_DISTANCE);
     }
 }
 
@@ -581,6 +593,12 @@ function handleIncomingMessage(message, remote)
 			else if (functionId==129) hwDimmerReceivedStatus(sender, receiver, message, dataLength);
 			else if (functionId>=200 && functionId<300) hwDimmerReceivedEvents(sender, receiver, functionId, message, dataLength);
 		}
+		else if (classIdSender == CLASS_ID_RGB_DIMMER)
+		{
+			if (functionId==128) hwRgbDimmerReceivedConfiguration(sender, receiver, message, dataLength);		
+			else if (functionId==129) hwRgbDimmerReceivedStatus(sender, receiver, message, dataLength);
+			else if (functionId>=200 && functionId<300) hwRgbDimmerReceivedEvents(sender, receiver, functionId, message, dataLength);
+		}
 		else if (classIdSender == CLASS_ID_IR_SENSOR)
 		{
 			if (functionId>=200 && functionId<300) hwIrSensorReceivedEvents(sender, receiver, functionId, message, dataLength);
@@ -709,6 +727,29 @@ function aFunctionCall(ioBrokerId, newValue)
 			  state == DIMMER_CFG_DIMMING_TIME ||
 			  state == DIMMER_CFG_FADING_TIME)
 		 hwDimmerSetConfiguration(state, newValue, objectId);
+  }
+  else if (classId == CLASS_ID_RGB_DIMMER)
+  {
+     if (state == RGB_DIMMER_FKT_COLOR)
+	 {
+ 		 var params = getMyParams(newValue, 3);	
+	     var red = params[0];
+	     var green = params[1];
+	     var blue = params[2];
+
+		 hwRgbDimmerSetColor(red, green, blue,0, objectId);
+	 }
+     else if (state == RGB_DIMMER_FKT_COLOR_DURATION)
+	 {
+ 		 var params = getMyParams(newValue, 4);	
+	     var red = params[0];
+	     var green = params[1];
+	     var blue = params[2];
+	     var duration = params[3];
+
+		 hwRgbDimmerSetColor(red, green, blue,duration, objectId);
+	 }
+	 else if (state == RGB_DIMMER_CFG_FADING_TIME) hwRgbDimmerSetConfiguration(state, newValue, objectId);
   }
   else if (classId == CLASS_ID_CONTROLLER)
   {
@@ -2643,6 +2684,170 @@ function hwDimmerSetConfiguration(configKey, newValue, receiverObjectId)
 	info("dimmer setConfiguration: "+dump(configurations[receiverObjectId])+" -> "+objectIdToString(receiverObjectId));
 }
 
+// RGB Dimmer
+function hwRgbDimmerGetConfiguration(receiverObjectId)
+{
+	debug("rgbDimmerGetConfiguration -> "+objectIdToString(receiverObjectId));	
+	
+	var data = [];
+	var pos=0;
+	data[pos++]=0; // Funktion ID
+	
+	sendHausbusUdpMessage(receiverObjectId, data, myObjectId);
+}
+
+function hwRgbDimmerReceivedEvents(sender, receiver, functionId, message, dataLength)
+{
+	var instanceId = getInstanceId(sender);
+	var deviceId = getDeviceId(sender);
+
+	var pos = DATA_START;
+	
+	if (functionId==200 || functionId==201) // evOff u. evOn
+	{
+		var brightnessRed=0;
+		var brightnessGreen=0;
+		var brightnessBlue=0;
+		
+		if (functionId==201)
+		{
+			brightnessRed = message[pos++];
+			brightnessGreen = message[pos++];
+			brightnessBlue = message[pos++];
+			info("rgb dimmer event evOn brightnessRed = "+brightnessRed+", brightnessGreen = "+brightnessGreen+", brightnessBlue = "+brightnessBlue+" <- "+objectIdToString(sender));	
+		}
+		else info("rgb dimmer event evOff <- "+objectIdToString(sender));	
+	
+	    var myId = getIoBrokerId(deviceId, CLASS_ID_RGB_DIMMER, instanceId, RGB_DIMMER_FKT_COLOR);
+	    setStateIoBroker(myId, brightnessRed+","+brightnessGreen+","+brightnessBlue, true);
+		
+        //var myId = getIoBrokerId(deviceId, CLASS_ID_RGB_DIMMER, instanceId, RGB_DIMMER_FKT_DIMMING_STATUS);
+	    //setStateIoBroker(myId, RGB_DIMMER_DIMMING_IDLE, true);
+	}
+	else if (functionId==202) // evStart
+	{
+		var directionByte = message[pos++];
+		var direction="";
+		if (directionByte==1) direction="UP";
+		else if (directionByte==255) direction="DOWN";
+		
+	    info("rgb dimmer event start direction = "+direction+" <- "+objectIdToString(sender));	
+		
+		/*if (direction!="")
+		{	
+	      var myId = getIoBrokerId(deviceId, CLASS_ID_RGB_DIMMER, instanceId, RGB_DIMMER_FKT_DIMMING_STATUS);
+	      setStateIoBroker(myId, direction, true);
+		}*/
+	}
+}
+
+function hwRgbDimmerGetStatus(receiverObjectId)
+{
+	debug("rgbDimmerGetStatus -> "+objectIdToString(receiverObjectId));	
+	
+	var data = [];
+	var pos=0;
+	data[pos++]=5; // Funktion ID
+	
+	sendHausbusUdpMessage(receiverObjectId, data, myObjectId);
+}
+
+function hwRgbDimmerSetColor(red, green, blue, duration, receiverObjectId)
+{
+	red = parseInt(red);
+	green = parseInt(green);
+	blue = parseInt(blue);
+	duration = parseInt(duration);
+
+	info("rgbDimmerSetColor red = "+red+", green = "+red+", green = "+red+", blue = "+blue+", duration = "+duration+" -> "+objectIdToString(receiverObjectId));	
+
+	var data = [];
+	var pos=0;
+	data[pos++]=2; // Funktion ID
+	data[pos++]=red;
+	data[pos++]=green;
+	data[pos++]=blue;
+	wordToByteArray(duration, data, pos); pos+=2;
+	
+	sendHausbusUdpMessage(receiverObjectId, data, myObjectId);
+}
+
+function hwRgbDimmerReceivedStatus(sender, receiver, message, dataLength)
+{
+	var instanceId = getInstanceId(sender);
+	var deviceId = getDeviceId(sender);
+	
+	var pos = DATA_START;
+	
+	var red = message[pos++];
+	var green = message[pos++];
+	var blue = message[pos++];
+	
+    info("rgbDimmerReceivedStatus red = "+red+", green = "+green+", blue = "+blue+" <- "+objectIdToString(sender));
+	
+    var myId = getIoBrokerId(deviceId, CLASS_ID_RGB_DIMMER, instanceId, RGB_DIMMER_FKT_COLOR);
+	setStateIoBroker(myId, red+","+green+","+blue, false);
+}
+
+function hwRgbDimmerReceivedConfiguration(sender, receiver, message, dataLength)
+{
+	var instanceId = getInstanceId(sender);
+	var deviceId = getDeviceId(sender);
+	
+	var pos = DATA_START;
+
+	var modeByte = message[pos++];
+	var mode=0;
+
+	var fadingTime = message[pos++];
+	var myId = getIoBrokerId(deviceId, CLASS_ID_RGB_DIMMER, instanceId, RGB_DIMMER_CFG_FADING_TIME, CHANNEL_CONFIG);
+	setStateIoBroker(myId, fadingTime);
+
+	var dimmingTime = message[pos++];
+	var dimmingRangeStart = message[pos++];
+	var dimmingRangeEnd = message[pos++];
+
+    configurations[sender]={mode:mode, fadingTime:fadingTime, dimmingTime: dimmingTime, dimmingRangeStart: dimmingRangeStart, dimmingRangeEnd: dimmingRangeEnd};
+	
+	debug("rgbDimmerReceivedConfiguration "+sender+": "+dump(configurations[sender]));
+}
+
+function hwRgbDimmerSetConfiguration(configKey, newValue, receiverObjectId)
+{
+	var mode = 0;
+	var fadingTime = 0;
+	var dimmingTime = 0;
+	var dimmingRangeStart = 0;
+	var dimmingRangeEnd = 0;
+	
+	var configuration = configurations[receiverObjectId];
+    if (typeof configuration != "undefined")
+	{
+       mode = parseInt(configuration.mode);
+  	   fadingTime = parseInt(configuration.fadingTime);
+	   dimmingTime = parseInt(configuration.dimmingTime);
+	   dimmingRangeStart = parseInt(configuration.dimmingRangeStart);
+	   dimmingRangeEnd = parseInt(configuration.dimmingRangeEnd);
+	}
+	
+	if (configKey == RGB_DIMMER_CFG_FADING_TIME) fadingTime=parseInt(newValue);
+
+    var data = [];
+	var pos=0;
+	data[pos++]=1; // Funktion ID
+	data[pos++]=mode;
+	data[pos++]=fadingTime;
+	data[pos++]=dimmingTime;
+	data[pos++]=dimmingRangeStart;
+	data[pos++]=dimmingRangeEnd;
+	
+	sendHausbusUdpMessage(receiverObjectId, data, myObjectId);
+	
+	configurations[receiverObjectId]={mode:mode, fadingTime:fadingTime, dimmingTime: dimmingTime, dimmingRangeStart: dimmingRangeStart, dimmingRangeEnd: dimmingRangeEnd};
+	
+	info("dimmer setConfiguration: "+dump(configurations[receiverObjectId])+" -> "+objectIdToString(receiverObjectId));
+}
+
 // Ethernet
 function hwEthernetGetCurrentIp(receiverObjectId)
 {
@@ -2821,6 +3026,7 @@ function hwControllerReceivedRemoteObjects(sender, receiver, message, dataLength
     var nrLeds=0;
     var nrRollos=0;
     var nrDimmer=0;
+    var nrRgbDimmer=0;
 	
 	var parts = objectList.split(";");
 	parts.forEach(function(item)
@@ -2834,6 +3040,7 @@ function hwControllerReceivedRemoteObjects(sender, receiver, message, dataLength
 	   else if (classId==CLASS_ID_LED) nrLeds++
 	   else if (classId==CLASS_ID_TASTER) nrTaster++
 	   else if (classId==CLASS_ID_SCHALTER) nrRelais++
+	   else if (classId==CLASS_ID_RGB_DIMMER) nrRgbDimmer++
 	});
 
     var moduleType="";
@@ -2851,9 +3058,8 @@ function hwControllerReceivedRemoteObjects(sender, receiver, message, dataLength
       else if ((nrTaster==1 && nrLeds==1) || (nrTaster==7 && nrLeds==7)) moduleType=MODUL_ID_1_TASTER;
       else if (nrRelais==9) moduleType = MODUL_ID_8_RELAIS;
       else if (nrDimmer==8 && nrRelais==1) moduleType=MODUL_ID_8_DIMMER;
+      else if (nrRgbDimmer==2) moduleType=MODUL_ID_RGB_DIMMER;
 	
-	  if (deviceId==21336) moduleType=MODUL_ID_8_RELAIS;
-
 	  if (moduleType=="" || typeof MODULES[moduleType]=="undefined")
 	  {
 	      warn("unrecognized module type for deviceId "+deviceId+" aborting...");
@@ -2945,6 +3151,7 @@ function hwControllerReceivedConfiguration(sender, receiver, message, dataLength
 		else if (fcke==0x1B) moduleId = MODUL_ID_1_TASTER;
 		else if (fcke==0x20) moduleId = MODUL_ID_32_IO;
 		else if (fcke==0x27) moduleId = MODUL_ID_8_DIMMER;
+		else if (fcke==0x30) moduleId = MODUL_ID_RGB_DIMMER;
 	}
 	else if (firmwareType == FIRMWARE_ID_SD485)
 	{
@@ -2999,6 +3206,12 @@ function readStatusForClasses(deviceId, foundClasses)
 	     debug("Status broadcast for class "+CLASSES[classId].name);
 	     hwDimmerGetConfiguration(getObjectId(deviceId, classId, 0));
 		 hwDimmerGetStatus(getObjectId(deviceId, classId, 0));
+	   }
+	   else if (classId == CLASS_ID_RGB_DIMMER)
+	   {
+	     debug("Status broadcast for class "+CLASSES[classId].name);
+	     hwRgbDimmerGetConfiguration(getObjectId(deviceId, classId, 0));
+		 hwRgbDimmerGetStatus(getObjectId(deviceId, classId, 0));
 	   }
 	   else if (classId == CLASS_ID_ETHERNET)
 	   {
@@ -3124,6 +3337,14 @@ function addIoBrokerStatesForInstance(deviceId, classId, instanceId)
 	  addStateIoBroker(DIMMER_CFG_FADING_TIME, 'number', 'state', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
 	  addStateIoBroker(DIMMER_CFG_DIMMING_RANGE_START, 'number', 'state', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
 	  addStateIoBroker(DIMMER_CFG_DIMMING_RANGE_END, 'number', 'state', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
+   }
+   else if (classId == CLASS_ID_RGB_DIMMER)
+   {
+	  addStateIoBroker(RGB_DIMMER_FKT_COLOR, 'string', 'state', deviceId, classId, instanceId, true, true, "red,green,blue");
+	  addStateIoBroker(RGB_DIMMER_FKT_COLOR_DURATION, 'string', 'state', deviceId, classId, instanceId, true, false, "red,green,blue,duration");
+	  //addStateIoBroker(RGB_DIMMER_FKT_DIMMING_STATUS, 'string', 'state', deviceId, classId, instanceId, false, true, RGB_DIMMER_DIMMING_IDLE);
+
+	  addStateIoBroker(RGB_DIMMER_CFG_FADING_TIME, 'number', 'state', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
    }
    else if (classId == CLASS_ID_LED)
    {
@@ -3665,6 +3886,7 @@ function initModulesClassesInstances()
 {
 	CLASSES[CLASS_ID_CONTROLLER]={id:CLASS_ID_CONTROLLER, name:"Modul"};
 	CLASSES[CLASS_ID_DIMMER]={id:CLASS_ID_DIMMER, name:"Dimmer"};
+	CLASSES[CLASS_ID_RGB_DIMMER]={id:CLASS_ID_DIMMER, name:"RGB Dimmer"};
 	CLASSES[CLASS_ID_FEUCHTESENSOR]={id:CLASS_ID_FEUCHTESENSOR, name:"Feuchtesensoren"};
 	CLASSES[CLASS_ID_HELLIGKEITSSENSOR]={id:CLASS_ID_HELLIGKEITSSENSOR, name:"Helligkeitssensoren"};
 	CLASSES[CLASS_ID_LED]={id:CLASS_ID_LED, name:"Ausgänge"};
@@ -3692,6 +3914,7 @@ function initModulesClassesInstances()
 	MODULES[MODUL_ID_2_TASTER]={id:MODUL_ID_2_TASTER, name:"2-fach Taster"};
 	MODULES[MODUL_ID_1_TASTER]={id:MODUL_ID_1_TASTER, name:"1-fach Taster"};
 	MODULES[MODUL_ID_8_DIMMER]={id:MODUL_ID_8_DIMMER, name:"8 Kanal Dimmermodul"};
+	MODULES[MODUL_ID_RGB_DIMMER]={id:MODUL_ID_RGB_DIMMER, name:"RGB Dimmermodul"};
 	MODULES[MODUL_ID_8_ROLLO]={id:MODUL_ID_8_ROLLO, name:"8 Kanal Rollomodul"};
 	MODULES[MODUL_ID_8_RELAIS]={id:MODUL_ID_8_RELAIS, name:"8 Kanal 16A Relaismodul"};
 	
@@ -4140,7 +4363,7 @@ function initModulesClassesInstances()
 
 	
 	// MODUL_ID_8_DIMMER
-        INSTANCES[MODUL_ID_8_DIMMER]={};
+    INSTANCES[MODUL_ID_8_DIMMER]={};
 	INSTANCES[MODUL_ID_8_DIMMER]["*"]={};
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_CONTROLLER]={};
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_CONTROLLER][1]="Maincontroller";
@@ -4158,7 +4381,7 @@ function initModulesClassesInstances()
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_SCHALTER]={};
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_SCHALTER][210]="Rote_Modul_LED";
 
-        INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER]={};
+    INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER]={};
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER][98]="Eingang_01";
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER][97]="Eingang_02";
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER][100]="Eingang_03";
@@ -4168,8 +4391,7 @@ function initModulesClassesInstances()
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER][104]="Eingang_07";
 	INSTANCES[MODUL_ID_8_DIMMER]["*"][CLASS_ID_TASTER][103]="Eingang_08";
 
-        // HBC
-	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC]={};
+    // HBC
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC]={};
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_CONTROLLER]={};
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_CONTROLLER][1]="Maincontroller";
@@ -4187,7 +4409,7 @@ function initModulesClassesInstances()
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_SCHALTER]={};
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_SCHALTER][210]="Rote_Modul_LED";
 
-        INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER]={};
+    INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER]={};
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][71]="Eingang_01";
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][72]="Eingang_02";
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][99]="Eingang_03";
@@ -4197,9 +4419,38 @@ function initModulesClassesInstances()
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][103]="Eingang_07";
 	INSTANCES[MODUL_ID_8_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][104]="Eingang_08";
 
+    // RGB DIMMER
+	INSTANCES[MODUL_ID_RGB_DIMMER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_CONTROLLER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_CONTROLLER][1]="Maincontroller";
+
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][1]="Dimmer_01";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][2]="Dimmer_02";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][3]="Dimmer_03";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][4]="Dimmer_04";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][5]="Dimmer_05";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_DIMMER][6]="Dimmer_06";
+
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_RGB_DIMMER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_RGB_DIMMER][1]="RGB_DIMMER_01";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_RGB_DIMMER][2]="RGB_DIMMER_02";
+
+    INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][17]="Eingang_01";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][18]="Eingang_02";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][19]="Eingang_03";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][20]="Eingang_04";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][21]="Eingang_05";
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_TASTER][22]="Eingang_06";
+
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_SCHALTER]={};
+	INSTANCES[MODUL_ID_RGB_DIMMER][FIRMWARE_ID_HBC][CLASS_ID_SCHALTER][210]="Rote_Modul_LED";
+
 	
 	// MODUL_ID_32_IO
-        INSTANCES[MODUL_ID_32_IO]={};
+    INSTANCES[MODUL_ID_32_IO]={};
 	INSTANCES[MODUL_ID_32_IO]["*"]={};
 	INSTANCES[MODUL_ID_32_IO]["*"][CLASS_ID_CONTROLLER]={};
 	INSTANCES[MODUL_ID_32_IO]["*"][CLASS_ID_CONTROLLER][1]="Maincontroller";
