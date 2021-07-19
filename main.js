@@ -3342,7 +3342,7 @@ function addIoBrokerStatesForInstance(deviceId, classId, instanceId)
    {
 	  addStateIoBroker(RGB_DIMMER_FKT_COLOR, 'string', 'state', deviceId, classId, instanceId, true, true, "red,green,blue");
 	  addStateIoBroker(RGB_DIMMER_FKT_COLOR_DURATION, 'string', 'state', deviceId, classId, instanceId, true, false, "red,green,blue,duration");
-	  //addStateIoBroker(RGB_DIMMER_FKT_DIMMING_STATUS, 'string', 'state', deviceId, classId, instanceId, false, true, RGB_DIMMER_DIMMING_IDLE);
+	   //addStateIoBroker(RGB_DIMMER_FKT_DIMMING_STATUS, 'string', 'state', deviceId, classId, instanceId, false, true, RGB_DIMMER_DIMMING_IDLE);
 
 	  addStateIoBroker(RGB_DIMMER_CFG_FADING_TIME, 'number', 'state', deviceId, classId, instanceId, true, true, null,CHANNEL_CONFIG);
    }

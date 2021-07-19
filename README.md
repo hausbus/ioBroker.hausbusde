@@ -35,7 +35,7 @@ The HausBusDe adapter is ready to use without further configurations. It is auto
 <br>
 
 ## Changelog
-### 0.1.12 (2021-07-19)
+### 0.1.12 (2021-07-19) 
 * (hausbusde) support for new RGB dimmer
 
 ### 0.1.11 (2021-07-14)
