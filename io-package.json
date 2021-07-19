@@ -4,8 +4,8 @@
         "version": "0.1.12",
         "news": {
 		    "0.1.12": {
-                "en": "support for new RGB dimmer",
-                "de": "support for new RGB dimmer"
+                "en": "support for new 2 channel RGB dimmer",
+                "de": "support for new 2 channel RGB dimmer"
             },
 		    "0.1.11": {
                 "en": "added celsius as unit for temperature",

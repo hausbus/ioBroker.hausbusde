@@ -1,7 +1,7 @@
 {
   "name": "iobroker.hausbusde",
   "version": "0.1.12",
-  "description": "ioBroker ddapter that communicates with haus-bus.de components",
+  "description": "ioBroker adapter that communicates with haus-bus.de components",
   "main": "main.js",
   "scripts": {
     "test": "node node_modules/mocha/bin/mocha --exit"
