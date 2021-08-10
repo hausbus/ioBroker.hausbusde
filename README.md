@@ -35,6 +35,9 @@ The HausBusDe adapter is ready to use without further configurations. It is auto
 <br>
 
 ## Changelog
+### 0.1.13 (2021-08-10) 
+* (hausbusde) fixed unfunctional blink method for led interface
+
 ### 0.1.12 (2021-07-19) 
 * (hausbusde) support for new RGB dimmer
 

@@ -2303,7 +2303,7 @@ function hwLedBlink(brightness, offTime, onTime, quantity, receiverObjectId)
 	
 	var data = [];
 	var pos=0;
-	data[pos++]=3; // Funktion ID
+	data[pos++]=4; // Funktion ID
 	data[pos++]=brightness;
 	data[pos++]=offTime;
 	data[pos++]=onTime;
